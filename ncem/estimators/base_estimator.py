@@ -138,7 +138,11 @@ class Estimator:
         """
         coord_type = 'generic'
         self.targeted_assay = True
-        if data_origin.startswith("zhang"):
+        if data_origin.startswith("atlas"):
+            from ncem.data import DataLoaderAtlas as DataLoader
+
+            self.undefined_node_types = ["other"]
+        elif data_origin.startswith("zhang"):
             from ncem.data import DataLoaderZhang as DataLoader
 
             self.undefined_node_types = ["other"]

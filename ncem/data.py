@@ -59,15 +59,15 @@ def get_data_custom(interpreter, deconvolution: bool = False, n_eval_nodes_per_g
         "Mean of mean node degree per images across images: %f"
         % np.mean([np.mean(v.sum(axis=1)) for k, v in interpreter.a.items()])
     )
-    
+
     # splitting data into test and validation sets, can be ignored for non sender-receiver focused analysis
     interpreter.split_data_node(0.1, 0.1)
     interpreter.n_eval_nodes_per_graph = n_eval_nodes_per_graph
     interpreter.cell_names = list(interpreter.data.celldata.uns['node_type_names'].values())
     if deconvolution:
         interpreter.proportions = {k: adata.obsm["proportions"] for k, adata in interpreter.data.img_celldata.items()}
-    
-    
+
+
 class GraphTools:
     """GraphTools class."""
 
@@ -1808,15 +1808,15 @@ class DataLoader(GraphTools, PlottingTools):
     @property
     def var_names(self):
         return self.celldata.var_names
-    
+
 
 class customLoader(DataLoader):
-    
+
     def __init__(
         self,
-        adata, 
-        cluster, 
-        patient, 
+        adata,
+        cluster,
+        patient,
         library_id,
         radius,
         coord_type='generic',
@@ -1847,14 +1847,14 @@ class customLoader(DataLoader):
                 len(self.celldata.uns["node_type_names"]),
             )
         )
-    
+
     def _register_celldata(self, n_top_genes):
-        
+
         metadata = {
             "cluster_col_preprocessed": self.cluster,
             "image_col": self.library_id
         }
-        
+
         celldata = self.adata.copy()
         celldata.X = celldata.X.toarray()
         celldata.uns["metadata"] = metadata
@@ -1883,7 +1883,7 @@ class customLoader(DataLoader):
         self.img_to_patient_dict = img_to_patient_dict
 
         self.celldata = celldata
-        
+
     def _register_img_celldata(self):
         """Load dictionary of of image-wise celldata objects with {imgage key : anndata object of image}."""
         img_celldata = {}
@@ -1923,13 +1923,13 @@ class customLoader(DataLoader):
         }
         self.celldata.uns["graph_covariates"] = graph_covariates
 
-        
+
 class customLoaderDeconvolution(DataLoader):
-    
+
     def __init__(
         self,
-        adata, 
-        patient, 
+        adata,
+        patient,
         library_id,
         radius,
         coord_type='generic',
@@ -1959,14 +1959,14 @@ class customLoaderDeconvolution(DataLoader):
                 len(self.celldata.uns["node_type_names"]),
             )
         )
-    
+
     def _register_celldata(self, n_top_genes):
-        
+
         metadata = {
             #"cluster_col_preprocessed": self.cluster,
             "image_col": self.library_id
         }
-        
+
         celldata = self.adata.copy()
         celldata.uns["metadata"] = metadata
 
@@ -1986,7 +1986,7 @@ class customLoaderDeconvolution(DataLoader):
         self.img_to_patient_dict = img_to_patient_dict
 
         self.celldata = celldata
-        
+
     def _register_img_celldata(self):
         """Load dictionary of of image-wise celldata objects with {imgage key : anndata object of image}."""
         img_celldata = {}
@@ -2007,6 +2007,97 @@ class customLoaderDeconvolution(DataLoader):
         """
         # Save processed data to attributes.
         for adata in self.img_celldata.values():
+            graph_covariates = {
+                "label_names": {},
+                "label_tensors": {},
+                "label_selection": [],
+                "continuous_mean": {},
+                "continuous_std": {},
+                "label_data_types": {},
+            }
+            adata.uns["graph_covariates"] = graph_covariates
+
+        graph_covariates = {
+            "label_names": {},
+            "label_selection": [],
+            "continuous_mean": {},
+            "continuous_std": {},
+            "label_data_types": {},
+        }
+        self.celldata.uns["graph_covariates"] = graph_covariates
+
+class DataLoaderAtlas(DataLoader):
+
+    # this dataloader does not use "cell_type_merge_dict"
+
+    def _register_celldata(self):
+        """
+        Registers an Anndata object over all images and collects all necessary information.
+        :return:
+        """
+        metadata = {
+            "lateral_resolution": 0.109,  # same as ZHang
+            "fn": "/img_119670929_1199650932.h5ad",  # fill in name of your dataset
+            "image_col": "section",
+            "pos_cols": ["center_x", "center_y"],
+            "cluster_col": "class_label",
+            "cluster_col_preprocessed": "class_label",
+            "patient_col": "animal",
+        }
+
+        celldata = read_h5ad(self.data_path + metadata["fn"]).copy()
+        print(celldata.obs[metadata["cluster_col_preprocessed"]])
+        celldata = celldata[celldata.obs[metadata["image_col"]] != "Dirt"].copy()
+        celldata.uns["metadata"] = metadata
+        celldata.uns["img_keys"] = list(np.unique(celldata.obs[metadata["image_col"]]))
+        print("test")
+        img_to_patient_dict = {
+            str(x): celldata.obs[metadata["patient_col"]]  # ].values[i].split("_")[0]
+            for i, x in enumerate(celldata.obs[metadata["image_col"]].values)
+        }
+        celldata.uns["img_to_patient_dict"] = img_to_patient_dict
+        self.img_to_patient_dict = img_to_patient_dict
+
+        # register x and y coordinates into obsm
+        celldata.obsm["spatial"] = celldata.obs[metadata["pos_cols"]]
+
+        # add clean cluster column which removes regular expression from cluster_col
+        celldata.obs[metadata["cluster_col_preprocessed"]] = list(
+            pd.Series(list(celldata.obs[metadata["cluster_col"]]), dtype="category")  # .map(self.cell_type_merge_dict)
+        )
+        celldata.obs[metadata["cluster_col_preprocessed"]] = celldata.obs[metadata["cluster_col_preprocessed"]].astype(
+            "category"
+        )
+
+        # register node type names
+        node_type_names = list(np.unique(celldata.obs[metadata["cluster_col_preprocessed"]]))
+        print(node_type_names)
+        print(celldata.obs[metadata["cluster_col_preprocessed"]].unique())
+        celldata.uns["node_type_names"] = {x: x for x in node_type_names}
+        node_types = np.zeros((celldata.shape[0], len(node_type_names)))
+        node_type_idx = np.array(
+            [
+                node_type_names.index(x) for x in celldata.obs[metadata["cluster_col_preprocessed"]].values
+            ]  # index in encoding vector
+        )
+        node_types[np.arange(0, node_type_idx.shape[0]), node_type_idx] = 1
+        celldata.obsm["node_types"] = node_types
+
+        self.celldata = celldata
+
+    def merge_types_predefined(self):
+        pass
+
+    def _register_img_celldata(self):
+        image_col = self.celldata.uns["metadata"]["image_col"]
+        img_celldata = {}
+        for k in self.celldata.uns["img_keys"]:
+            img_celldata[str(k)] = self.celldata[self.celldata.obs[image_col] == k].copy()
+        self.img_celldata = img_celldata
+
+    def _register_graph_features(self, label_selection):
+        # Save processed data to attributes.
+        for k, adata in self.img_celldata.items():
             graph_covariates = {
                 "label_names": {},
                 "label_tensors": {},
@@ -2348,40 +2439,40 @@ class DataLoaderHartmann(DataLoader):
             # "Cluster",
         ]
         var_names = [
-            'H3-4', 
-            'VIM', 
-            'SMN1', 
-            'SLC3A2', 
-            'NFE2L2', 
-            'CD4', 
-            'CD14', 
-            'PTPRC', 
+            'H3-4',
+            'VIM',
+            'SMN1',
+            'SLC3A2',
+            'NFE2L2',
+            'CD4',
+            'CD14',
+            'PTPRC',
             'PDCD1',
-            'PECAM1', 
-            'SDHA', 
-            'MKI67', 
-            'CS', 
-            'RPS6', 
-            'ITGAX', 
-            'CD68', 
-            'CD36', 
+            'PECAM1',
+            'SDHA',
+            'MKI67',
+            'CS',
+            'RPS6',
+            'ITGAX',
+            'CD68',
+            'CD36',
             'ATP5F1A',
-            'CD247', 
-            'ENTPD1', 
-            'VDAC1', 
-            'G6PD', 
-            'XBP1', 
-            'PKM', 
-            'SLC1A5', 
-            'SLC2A1', 
+            'CD247',
+            'ENTPD1',
+            'VDAC1',
+            'G6PD',
+            'XBP1',
+            'PKM',
+            'SLC1A5',
+            'SLC2A1',
             'CD8A',
-            'B3GAT1', 
-            'LDHA', 
-            'IDH2', 
-            'HK1', 
-            'CDH1', 
-            'CPT1A', 
-            'CKM', 
+            'B3GAT1',
+            'LDHA',
+            'IDH2',
+            'HK1',
+            'CDH1',
+            'CPT1A',
+            'CKM',
             'ATP1A1',
             'HIF1A'
         ]
