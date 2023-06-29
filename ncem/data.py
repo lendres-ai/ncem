@@ -2046,7 +2046,7 @@ class DataLoaderAtlas(DataLoader):
         }
 
         celldata = read_h5ad(self.data_path + metadata["fn"]).copy()
-        print(celldata.obs[metadata["cluster_col_preprocessed"]])
+        celldata.X = celldata.X.toarray() # convert sparse matrix to dense matrix
         celldata = celldata[celldata.obs[metadata["image_col"]] != "Dirt"].copy()
         celldata.uns["metadata"] = metadata
         celldata.uns["img_keys"] = list(np.unique(celldata.obs[metadata["image_col"]]))
